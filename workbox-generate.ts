@@ -1,4 +1,4 @@
-import { generateSW, injectManifest } from 'workbox-build'
+import { injectManifest } from 'workbox-build'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -6,11 +6,23 @@ import { build } from 'esbuild'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-export async function workboxGenerate() {
+export async function workboxGenerate(buildId: string) {
   const clientDist = resolve(__dirname, '.tanstack/start/build/client-dist')
   const swDest = resolve(clientDist, 'sw.js')
+  const swImplDest = resolve(clientDist, 'sw.module.js')
   
-  // First, compile the service worker using esbuild
+  await build({
+    entryPoints: [resolve(__dirname, 'src/sw.module.ts')],
+    bundle: true,
+    outfile: swImplDest,
+    format: 'iife',
+    target: 'es2020',
+    minify: true,
+    define: {
+      'import.meta.env.DEV': 'false'
+    }
+  })
+
   await build({
     entryPoints: [resolve(__dirname, 'src/sw.ts')],
     bundle: true,
@@ -19,11 +31,11 @@ export async function workboxGenerate() {
     target: 'es2020',
     minify: true,
     define: {
-      'import.meta.env.DEV': 'false'
+      'import.meta.env.DEV': 'false',
+      'self.__WB_BUILD_ID': `"${buildId}"`
     }
   })
 
-  // Then inject the manifest
   const { count, warnings, size } = await injectManifest({
     swSrc: swDest,
     swDest: swDest,
@@ -39,7 +51,3 @@ export async function workboxGenerate() {
   console.log(`[workbox] generated sw.js with ${count} precached files (${(size/1024).toFixed(1)} KiB)`)
 }
 
-
-if (import.meta.main) {
-  workboxGenerate()
-}

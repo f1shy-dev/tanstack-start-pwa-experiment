@@ -1,19 +1,26 @@
-import { clientsClaim, skipWaiting } from "workbox-core";
 /// <reference lib="webworker" />
-import {
-	cleanupOutdatedCaches,
-	createHandlerBoundToURL,
-	precacheAndRoute,
-} from "workbox-precaching";
-import { NavigationRoute, registerRoute } from "workbox-routing";
 
-declare let self: ServiceWorkerGlobalScope;
+import type { __imports } from "./sw.module";
 
+importScripts("/sw.module.js");
+
+declare let self: ServiceWorkerGlobalScope & {
+	__imports: typeof __imports;
+	__WB_BUILD_ID: string;
+};
+
+const { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } =
+	self.__imports["workbox-precaching"];
+
+const { clientsClaim, skipWaiting } = self.__imports["workbox-core"];
+const { NavigationRoute, registerRoute } = self.__imports["workbox-routing"];
+
+console.debug(`[sw] 👋 buildId=${self.__WB_BUILD_ID}`);
 // self.__WB_MANIFEST is the default injection point
 precacheAndRoute([
 	...self.__WB_MANIFEST,
 	{
-		revision: "00000000000000000000000000000000",
+		revision: self.__WB_BUILD_ID,
 		url: "/offline",
 	},
 ]);
@@ -35,7 +42,13 @@ registerRoute(
 	}),
 );
 
-// self.skipWaiting();
 clientsClaim();
 skipWaiting();
-// export {};
+
+self.addEventListener("message", (event) => {
+	if (event.data.type === "check_build_id") {
+		event.ports[0].postMessage({
+			buildId: self.__WB_BUILD_ID,
+		});
+	}
+});
