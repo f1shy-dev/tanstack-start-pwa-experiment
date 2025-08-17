@@ -1,55 +1,37 @@
-import { generateSW } from 'workbox-build'
+import { generateSW, injectManifest } from 'workbox-build'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-async function main() {
-  const dist = resolve(__dirname,  '.workbox-build')
+export async function workboxGenerate() {
+  const clientDist = resolve(__dirname, '.tanstack/start/build/client-dist')
+  const swDest = resolve(clientDist, 'sw.js')
+  
+  // First, compile the service worker using esbuild
+  await build({
+    entryPoints: [resolve(__dirname, 'src/sw.ts')],
+    bundle: true,
+    outfile: swDest,
+    format: 'esm',
+    target: 'es2020',
+    minify: true,
+    define: {
+      'import.meta.env.DEV': 'false'
+    }
+  })
 
-  const { count, warnings, size } = await generateSW({
-    swDest: resolve(dist, 'sw.js'),
-    globDirectory: dist,
+  // Then inject the manifest
+  const { count, warnings, size } = await injectManifest({
+    swSrc: swDest,
+    swDest: swDest,
+    globDirectory: clientDist,
     globPatterns: [
       '**/*.{js,css,html,svg,png,ico,webmanifest,json}',
-      'offline.html'
     ],
-    skipWaiting: true,
-    clientsClaim: true,
-    navigateFallback: '/offline.html',
-    navigateFallbackAllowlist: [/^\/$/ , /^(?!\/api\/)/],
-    runtimeCaching: [
-      {
-        urlPattern: ({ url }) => /\/api\//.test(url.pathname),
-        handler: 'NetworkFirst',
-        options: {
-          cacheName: 'api',
-          networkTimeoutSeconds: 10,
-          expiration: { maxEntries: 50, maxAgeSeconds: 60 * 5 },
-          cacheableResponse: { statuses: [0, 200] }
-        }
-      },
-      {
-        // Images
-        urlPattern: ({ request }) => request.destination === 'image',
-        handler: 'StaleWhileRevalidate',
-        options: {
-          cacheName: 'images',
-          expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 }
-        }
-      },
-      {
-        // Google Fonts stylesheets & font files
-        urlPattern: ({ url }) => /^(https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com))\//.test(url.href),
-        handler: 'CacheFirst',
-        options: {
-          cacheName: 'google-fonts',
-          expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 }
-        }
-      }
-    ]
-  })
+  });
 
   if (warnings.length) {
     console.warn('[workbox] warnings:', warnings)
@@ -57,7 +39,7 @@ async function main() {
   console.log(`[workbox] generated sw.js with ${count} precached files (${(size/1024).toFixed(1)} KiB)`)
 }
 
-main().catch(e => {
-  console.error(e)
-  process.exit(1)
-})
+
+if (import.meta.main) {
+  workboxGenerate()
+}
